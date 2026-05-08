@@ -20,7 +20,9 @@ python ingest.py                 # builds the vector store
 streamlit run app.py             # the chat UI
 ```
 
-Ollama must be running on `http://localhost:11434` (the macOS app or `ollama serve`).
+Ollama must be running on `http://localhost:11434` (`ollama serve`, or the desktop app on macOS/Windows).
+
+`ingest.py` must succeed at least once before `app.py` will start — `rag._get_collection()` calls `Chroma.get_collection()`, which raises if the collection is missing.
 
 ## Repo map
 
@@ -46,6 +48,8 @@ data/chroma/         persistent vector store (gitignored)
 Uses module-level singletons for the embedder, Chroma collection, and Ollama client. They survive Streamlit reruns intentionally — do not move them inside functions.
 
 **`app.py`** — Streamlit only. Imports from `rag.py`. Should never call ChromaDB, Ollama, or `sentence-transformers` directly.
+
+**Known V1 wart, do not "fix":** `app.py` calls `retrieve()` once for the source panel, then `ask_stream()` which calls `retrieve()` again internally. Each chat turn runs retrieval twice. This is deliberate — `ask_stream` yields tokens only, and the UI needs sources before the first token. V2's FastAPI layer will replace this with a single retrieval that fans out to streaming + sources.
 
 ## Configuration
 
@@ -77,7 +81,7 @@ All config flows through `.env` → `os.getenv` at module load. Defaults live in
 1. **Local-only is non-negotiable.** No outbound calls to OpenAI, Anthropic, Cohere, Voyage, or any hosted API. Every model and store runs on the user's machine.
 2. **`rag.py` has no UI imports.** It must remain reusable from a future FastAPI service in V2.
 3. **The Chroma collection is single-source-of-truth at runtime.** Don't add a second cache layer in V1.
-4. **Citations must round-trip.** Every chunk in the store has `source` (filename) and `page` (1-indexed) metadata. Don't add a code path that loses them.
+4. **Citations must round-trip.** Every chunk in the store has `source` (filename) and `page` (1-indexed) metadata. The model is instructed to render them as `[source p.N]` (e.g. `[DORA.pdf p.42]`) by `SYSTEM_PROMPT` in `rag.py`. Don't add a code path that loses metadata, and don't change the citation format without updating downstream parsers.
 5. **The corpus is public-domain regulatory text.** No code path may write user queries or model outputs to disk or telemetry — V2 will introduce structured tracing under explicit consent.
 
 ## V1 vs V2 — scope discipline
@@ -101,7 +105,7 @@ If the user asks for a V1 bug fix, fix only that bug. Do not opportunistically a
 
 There is no automated test suite in V1. After any change:
 
-1. `python -c "import ingest, rag, app"` — imports clean.
+1. `python -c "import ingest, rag"` — imports clean. (Importing `app` works but emits Streamlit `ScriptRunContext` warnings; step 3 covers it.)
 2. `python ingest.py` — completes without error and reports a non-zero chunk count for all three PDFs.
 3. `streamlit run app.py` — UI loads, accepts a query, returns an answer with at least one cited source.
 4. Try the three canonical questions:

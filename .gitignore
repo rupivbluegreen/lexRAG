@@ -1,0 +1,21 @@
+# envs & caches
+.venv/
+__pycache__/
+*.py[cod]
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# local config & data
+.env
+pdfs/
+data/
+
+# editor/OS
+.idea/
+.vscode/
+.DS_Store
+
+# tooling sidecars
+.remember/
